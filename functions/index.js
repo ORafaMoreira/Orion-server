@@ -1,42 +1,39 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
-
-const {onRequest} = require("firebase-functions/v2/https");
+const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
+const { PDFDocument, rgb, degrees, StandardFonts } = require("pdf-lib");
+const fs = require("fs");
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+exports.fillPdfForm = onRequest(async (request, response) => {
+  try {
+    const localFilePath = 'Caminho/Para/Seu/Formulario.pdf'; // Substitua pelo caminho real do seu PDF
+    const existingPdfBytes = fs.readFileSync(localFilePath);
 
- exports.helloWorld = onRequest((request, response) => {
-   logger.info("Hello logs!", {structuredData: true});
-   response.send("Hello from Firebase!");
- });
- async function modifyPdf() {
-  const url = 'https://pdf-lib.js.org/assets/with_update_sections.pdf'
-  const existingPdfBytes = await fetch(url).then(res => res.arrayBuffer())
+    // Informações recebidas por HTTP
+    const formData = request.body;
 
-  const pdfDoc = await PDFDocument.load(existingPdfBytes)
-  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    // Use o pdf-lib para carregar o PDF existente
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+    const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const pages = pdfDoc.getPages()
-  const firstPage = pages[0]
-  const { width, height } = firstPage.getSize()
-  firstPage.drawText('This text was added with JavaScript!', {
-    x: 5,
-    y: height / 2 + 300,
-    size: 50,
-    font: helveticaFont,
-    color: rgb(0.95, 0.1, 0.1),
-    rotate: degrees(-45),
-  })
+    // Preencha o formulário com as informações recebidas
+    const formFields = pdfDoc.getForm().getFields();
+    for (const fieldName in formData) {
+      const field = formFields.find(f => f.getName() === fieldName);
+      if (field) {
+        field.setText(formData[fieldName]);
+      } else {
+        logger.warn(`Campo de formulário '${fieldName}' não encontrado no PDF.`);
+      }
+    }
 
-  const pdfBytes = await pdfDoc.save()
-}
+    // Salve o PDF modificado
+    const modifiedPdfBytes = await pdfDoc.save();
 
-
+    // Envie o PDF modificado como resposta
+    response.setHeader('Content-Type', 'application/pdf');
+    response.status(200).send(Buffer.from(modifiedPdfBytes));
+  } catch (error) {
+    logger.error('Erro ao preencher o formulário PDF:', error);
+    response.status(500).send('Erro interno do servidor');
+  }
+});
